@@ -33,7 +33,8 @@ export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,bool
  for(const v of visible){let marker=markers.current.get(v.id);if(!marker){const el=document.createElement("button");el.onclick=()=>{const latest=current.current.find(x=>x.id===v.id);if(latest)callbacks.current.onSelect(latest);};marker=new gl.Marker({element:el,anchor:"center"}).setLngLat([v.lon,v.lat]).addTo(map.current);markers.current.set(v.id,marker);}
  const next:Point=[v.lon,v.lat], previous=positions.current.get(v.id), willMove=!!previous&&!samePoint(previous,next);
  const displayBearing=v.bearing??(previous?bearingBetween(previous,next):0);
- const el=marker.getElement();el.className="maplibregl-marker maplibregl-marker-anchor-center vehicle-pin "+v.kind+(selected===v.id?" selected":"")+(oldPosition(v,now)?" old":"")+(willMove||rafs.current.has(v.id)?" moving":"");
+ const isOld=oldPosition(v,now);
+ const el=marker.getElement();el.className="maplibregl-marker maplibregl-marker-anchor-center vehicle-pin "+v.kind+(selected===v.id?" selected":"")+(isOld?" old":"")+(v.kind==="bus"&&!isOld?" live":"")+(willMove||rafs.current.has(v.id)?" moving":"");
  el.style.setProperty("--vehicle-color",kinds.find(k=>k.id===v.kind)!.color);
  const scale=vehicleSize(v), width=v.kind==="bus"?58:Math.round(22+scale*22), height=v.kind==="bus"?34:Math.round(24+scale*20);
  el.style.setProperty("--vehicle-width",width+"px");el.style.setProperty("--vehicle-height",height+"px");
@@ -42,7 +43,7 @@ export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,bool
  if(v.kind==="bus"){glyph.innerHTML='<svg viewBox="0 0 76 44" aria-hidden="true"><path class="bus-shadow" d="M9 35h55l7 4-9 3H8l-5-3Z"/><path class="bus-side" d="M8 14c0-4 3-7 7-7h42c6 0 10 4 12 10l3 12H8V14Z"/><path class="bus-roof" d="M15 5h39c6 0 11 4 14 11H11l4-11Z"/><path class="bus-window" d="M16 12h38c5 0 8 2 11 7H16V12Z"/><path class="bus-door" d="M49 20h10v11H49Z"/><path class="bus-front" d="M64 21h7l1 7h-8v-7Z"/><circle class="wheel" cx="20" cy="32" r="5"/><circle class="wheel" cx="58" cy="32" r="5"/><circle class="wheel-cap" cx="20" cy="32" r="2"/><circle class="wheel-cap" cx="58" cy="32" r="2"/></svg>';const label=document.createElement("span");label.className="route-label";label.textContent=v.line||"B";el.appendChild(glyph);el.appendChild(label);}
  else{glyph.innerHTML=v.kind==="ferry"?'<svg viewBox="0 0 72 42" aria-hidden="true"><path class="ship-hull" d="M5 16h50l12 8-8 13H15L5 16Z"/><path class="ship-cabin" d="M20 7h25l6 9H16l4-9Z"/><path class="ship-deck" d="M15 21h40"/></svg>':'<svg viewBox="0 0 72 42" aria-hidden="true"><path class="ship-hull" d="M7 20 36 5l29 15-10 16H17L7 20Z"/><path class="ship-cabin" d="M29 13h14l5 8H24l5-8Z"/><path class="ship-deck" d="M18 23h36"/></svg>';el.appendChild(glyph);}
  if(!previous){positions.current.set(v.id,next);marker.setLngLat(next);}
- else if(!samePoint(previous,next)){const oldRaf=rafs.current.get(v.id);if(oldRaf)cancelAnimationFrame(oldRaf);const start=performance.now(), from=previous, duration=v.kind==="bus"?28000:70000;
+ else if(!samePoint(previous,next)){const oldRaf=rafs.current.get(v.id);if(oldRaf)cancelAnimationFrame(oldRaf);const start=performance.now(), from=previous, duration=v.kind==="bus"?18000:70000;
   const step=(time:number)=>{const t=Math.min(1,(time-start)/duration), e=smoothStep(t), p:Point=[from[0]+(next[0]-from[0])*e,from[1]+(next[1]-from[1])*e];positions.current.set(v.id,p);marker!.setLngLat(p);if(t<1)rafs.current.set(v.id,requestAnimationFrame(step));else{positions.current.set(v.id,next);rafs.current.delete(v.id);}};
   rafs.current.set(v.id,requestAnimationFrame(step));
  }else marker.setLngLat(next);
