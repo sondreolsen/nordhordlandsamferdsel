@@ -8,6 +8,7 @@ type Point=[number,number];
 function samePoint(a:Point,b:Point){return Math.abs(a[0]-b[0])<0.000001&&Math.abs(a[1]-b[1])<0.000001;}
 function vehicleSize(v:Vehicle){const meters=v.kind==="bus"?12:v.sizeMeters||42;return Math.max(1,Math.min(2.25,meters/48));}
 function smoothStep(t:number){return t*t*(3-2*t);}
+function bearingBetween(a:Point,b:Point){const lat=((a[1]+b[1])/2)*Math.PI/180, dx=(b[0]-a[0])*Math.cos(lat), dy=b[1]-a[1];return (Math.atan2(dx,dy)*180/Math.PI+360)%360;}
 export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,boolean>;now:number;selected:string|null;onSelect:(v:Vehicle)=>void;onStop:(id:string)=>void;onVisible:(ids:string[])=>void}>(function TrafficMap({vehicles,enabled,now,selected,onSelect,onStop,onVisible},ref){
  const container=useRef<HTMLDivElement>(null), map=useRef<GLMap|null>(null), markers=useRef(new Map<string,Marker>()), positions=useRef(new Map<string,Point>()), rafs=useRef(new Map<string,number>()), callbacks=useRef({onSelect,onStop,onVisible}), current=useRef(vehicles);
  callbacks.current={onSelect,onStop,onVisible};current.current=vehicles;
@@ -30,15 +31,16 @@ export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,bool
  const visible=vehicles.filter(v=>enabled[v.kind]);const ids=new Set(visible.map(v=>v.id));
  for(const [id,m] of markers.current){if(!ids.has(id)){const raf=rafs.current.get(id);if(raf)cancelAnimationFrame(raf);rafs.current.delete(id);positions.current.delete(id);m.remove();markers.current.delete(id);}}
  for(const v of visible){let marker=markers.current.get(v.id);if(!marker){const el=document.createElement("button");el.onclick=()=>{const latest=current.current.find(x=>x.id===v.id);if(latest)callbacks.current.onSelect(latest);};marker=new gl.Marker({element:el,anchor:"center"}).setLngLat([v.lon,v.lat]).addTo(map.current);markers.current.set(v.id,marker);}
- const el=marker.getElement();el.className="maplibregl-marker maplibregl-marker-anchor-center vehicle-pin "+v.kind+(selected===v.id?" selected":"")+(oldPosition(v,now)?" old":"");
+ const next:Point=[v.lon,v.lat], previous=positions.current.get(v.id), willMove=!!previous&&!samePoint(previous,next);
+ const displayBearing=v.bearing??(previous?bearingBetween(previous,next):0);
+ const el=marker.getElement();el.className="maplibregl-marker maplibregl-marker-anchor-center vehicle-pin "+v.kind+(selected===v.id?" selected":"")+(oldPosition(v,now)?" old":"")+(willMove||rafs.current.has(v.id)?" moving":"");
  el.style.setProperty("--vehicle-color",kinds.find(k=>k.id===v.kind)!.color);
- const scale=vehicleSize(v), width=v.kind==="bus"?46:Math.round(22+scale*22), height=v.kind==="bus"?31:Math.round(24+scale*20);
+ const scale=vehicleSize(v), width=v.kind==="bus"?58:Math.round(22+scale*22), height=v.kind==="bus"?34:Math.round(24+scale*20);
  el.style.setProperty("--vehicle-width",width+"px");el.style.setProperty("--vehicle-height",height+"px");
  el.title=v.name+(v.destination?" → "+v.destination:"");el.setAttribute("aria-label",el.title);el.setAttribute("aria-pressed",String(selected===v.id));
- el.replaceChildren();const glyph=document.createElement("span");glyph.className="vehicle-glyph";glyph.style.transform="rotate("+(v.bearing??0)+"deg)";
- if(v.kind==="bus"){glyph.innerHTML='<svg viewBox="0 0 58 34" aria-hidden="true"><path class="bus-body" d="M6 7c0-3 2-5 5-5h30c6 0 10 4 12 10l2 8v7H6V7Z"/><path class="bus-window" d="M13 7h25c5 0 8 3 10 7H13V7Z"/><path class="bus-front" d="M48 15h5l1 5h-6v-5Z"/><circle class="wheel" cx="17" cy="28" r="4"/><circle class="wheel" cx="45" cy="28" r="4"/></svg>';const label=document.createElement("span");label.className="route-label";label.textContent=v.line||"B";el.appendChild(glyph);el.appendChild(label);}
+ el.replaceChildren();const glyph=document.createElement("span");glyph.className="vehicle-glyph";glyph.style.transform="rotate("+(v.kind==="bus"?displayBearing-90:displayBearing)+"deg)";
+ if(v.kind==="bus"){glyph.innerHTML='<svg viewBox="0 0 76 44" aria-hidden="true"><path class="bus-shadow" d="M9 35h55l7 4-9 3H8l-5-3Z"/><path class="bus-side" d="M8 14c0-4 3-7 7-7h42c6 0 10 4 12 10l3 12H8V14Z"/><path class="bus-roof" d="M15 5h39c6 0 11 4 14 11H11l4-11Z"/><path class="bus-window" d="M16 12h38c5 0 8 2 11 7H16V12Z"/><path class="bus-door" d="M49 20h10v11H49Z"/><path class="bus-front" d="M64 21h7l1 7h-8v-7Z"/><circle class="wheel" cx="20" cy="32" r="5"/><circle class="wheel" cx="58" cy="32" r="5"/><circle class="wheel-cap" cx="20" cy="32" r="2"/><circle class="wheel-cap" cx="58" cy="32" r="2"/></svg>';const label=document.createElement("span");label.className="route-label";label.textContent=v.line||"B";el.appendChild(glyph);el.appendChild(label);}
  else{glyph.innerHTML=v.kind==="ferry"?'<svg viewBox="0 0 72 42" aria-hidden="true"><path class="ship-hull" d="M5 16h50l12 8-8 13H15L5 16Z"/><path class="ship-cabin" d="M20 7h25l6 9H16l4-9Z"/><path class="ship-deck" d="M15 21h40"/></svg>':'<svg viewBox="0 0 72 42" aria-hidden="true"><path class="ship-hull" d="M7 20 36 5l29 15-10 16H17L7 20Z"/><path class="ship-cabin" d="M29 13h14l5 8H24l5-8Z"/><path class="ship-deck" d="M18 23h36"/></svg>';el.appendChild(glyph);}
- const next:Point=[v.lon,v.lat], previous=positions.current.get(v.id);
  if(!previous){positions.current.set(v.id,next);marker.setLngLat(next);}
  else if(!samePoint(previous,next)){const oldRaf=rafs.current.get(v.id);if(oldRaf)cancelAnimationFrame(oldRaf);const start=performance.now(), from=previous, duration=v.kind==="bus"?28000:70000;
   const step=(time:number)=>{const t=Math.min(1,(time-start)/duration), e=smoothStep(t), p:Point=[from[0]+(next[0]-from[0])*e,from[1]+(next[1]-from[1])*e];positions.current.set(v.id,p);marker!.setLngLat(p);if(t<1)rafs.current.set(v.id,requestAnimationFrame(step));else{positions.current.set(v.id,next);rafs.current.delete(v.id);}};

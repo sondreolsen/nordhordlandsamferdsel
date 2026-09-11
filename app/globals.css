@@ -14,10 +14,15 @@
 .vehicle-pin{width:var(--vehicle-width,42px)!important;height:var(--vehicle-height,30px)!important;min-width:0!important;background:transparent!important;border:0!important;border-radius:0!important;box-shadow:none!important;padding:0!important;color:#101820!important;display:grid!important;place-items:center!important;overflow:visible!important;transition:opacity .3s,filter .2s!important}
 .vehicle-glyph{display:grid;place-items:center;width:100%;height:100%;transform-origin:50% 50%;filter:drop-shadow(0 2px 5px #071621aa)}
 .vehicle-pin.bus .vehicle-glyph svg,.vehicle-pin:not(.bus) .vehicle-glyph svg{width:100%;height:100%;overflow:visible}
-.bus-body{fill:#f9b855;stroke:#102330;stroke-width:1.6}
-.bus-window{fill:#17303f;stroke:#102330;stroke-width:1}
-.bus-front{fill:#f7d48d}
+.bus-shadow{fill:#06131f66}
+.bus-side,.bus-body{fill:#f9b855;stroke:#102330;stroke-width:1.8;stroke-linejoin:round}
+.bus-roof{fill:#d5972f;stroke:#102330;stroke-width:1.3;stroke-linejoin:round}
+.bus-window{fill:#163243;stroke:#102330;stroke-width:1}
+.bus-front,.bus-door{fill:#f7d48d;stroke:#102330;stroke-width:1}
 .wheel{fill:#0d1d28;stroke:#f3d58f;stroke-width:1}
+.wheel-cap{fill:#90a4ad}
+.vehicle-pin.bus.moving .wheel{animation:wheel-pulse .8s linear infinite}
+.vehicle-pin.bus.moving .vehicle-glyph{filter:drop-shadow(0 2px 5px #071621aa) drop-shadow(0 0 5px #f9b85555)}
 .route-label{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);font:700 10px 'Space Grotesk',sans-serif;color:#101820;text-shadow:0 1px 0 #ffd88b;pointer-events:none}
 .ship-hull{fill:color-mix(in srgb,var(--vehicle-color) 82%,#f6fbff 18%);stroke:#102330;stroke-width:2;stroke-linejoin:round}
 .ship-cabin{fill:#dff2fa;stroke:#102330;stroke-width:1.5}
@@ -28,3 +33,4 @@
 .vehicle-pin.selected{z-index:4!important;opacity:1!important}
 .vehicle-pin.selected .vehicle-glyph{filter:drop-shadow(0 0 0 #fff) drop-shadow(0 0 7px #fff)}
 .vehicle-pin:hover{opacity:1!important;z-index:4!important;outline:2px solid white!important;outline-offset:4px!important}
+@keyframes wheel-pulse{50%{stroke:#fff0b0;stroke-width:1.7}}
