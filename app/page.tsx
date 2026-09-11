@@ -3,12 +3,14 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {Waves,BusFront,Ship,ShipWheel,Sailboat,ArrowUpRight,ArrowLeft,Plus,Minus,LocateFixed,Maximize,Minimize,RefreshCw,Info,X,Clock3,Layers3,ChevronRight,MapPin,Radio,ChevronDown} from "lucide-react";
 import TrafficMap,{type MapHandle} from "./traffic-map";
 import {kinds,places,stops,oldPosition,age,time,type Kind,type Vehicle,type Feed} from "../lib/traffic";
+import {loadStaticDepartures,loadStaticTraffic} from "../lib/static-data";
 const icons={bus:BusFront,ferry:Ship,boat:Sailboat,ship:ShipWheel};
 type Call={realtime:boolean;aimedDepartureTime:string;expectedDepartureTime:string;destinationDisplay:{frontText:string};quay:{name:string};serviceJourney:{journeyPattern:{line:{publicCode:string;transportMode:string}}}};
+function staticDataMode(){return typeof window!=="undefined"&&(window.location.hostname.endsWith("github.io")||window.location.search.includes("static-data=1")||(window as typeof window&{__STATIC_DATA__?:boolean}).__STATIC_DATA__);}
 function useFeed(source:string){
  const [feed,setFeed]=useState<Feed|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(false),[tick,setTick]=useState(0);
  useEffect(()=>{let active=true;const controller=new AbortController();
- async function load(){setLoading(true);try{const r=await fetch("/api/traffic?source="+source,{signal:controller.signal});if(!r.ok)throw Error();const j=await r.json();if(active){setFeed(j as Feed);setError(false);}}catch{if(active)setError(true);}finally{if(active)setLoading(false);}}
+ async function load(){setLoading(true);try{const j=staticDataMode()?await loadStaticTraffic(source):await fetch("/api/traffic?source="+source,{signal:controller.signal}).then(r=>{if(!r.ok)throw Error();return r.json()});if(active){setFeed(j as Feed);setError(false);}}catch{if(active)setError(true);}finally{if(active)setLoading(false);}}
  load();const interval=setInterval(()=>{if(!document.hidden)load();},source==="bus"?30000:300000);
  return()=>{active=false;controller.abort();clearInterval(interval);};},[source,tick]);
  return {feed,loading,error,reload:()=>setTick(t=>t+1)};
@@ -24,7 +26,7 @@ export default function Home(){
  const received=[bus.feed?.fetched,ais.feed?.fetched].filter(Boolean).sort().at(-1)||null;
  useEffect(()=>{const id=setInterval(()=>setNow(Date.now()),15000);const fullscreen=()=>setFull(!!document.fullscreenElement);document.addEventListener("fullscreenchange",fullscreen);return()=>{clearInterval(id);document.removeEventListener("fullscreenchange",fullscreen);};},[]);
  useEffect(()=>{let active=true;const controller=new AbortController();setDepartures(null);setDepError(false);
- async function load(){setDepLoading(true);try{const r=await fetch("/api/departures?stop="+encodeURIComponent(stop),{signal:controller.signal});if(!r.ok)throw Error();const j=await r.json();if(active){setDepartures(j as {calls:Call[];fetched:string});setDepError(false);}}catch{if(active)setDepError(true);}finally{if(active)setDepLoading(false);}}
+ async function load(){setDepLoading(true);try{const j=staticDataMode()?await loadStaticDepartures(stop):await fetch("/api/departures?stop="+encodeURIComponent(stop),{signal:controller.signal}).then(r=>{if(!r.ok)throw Error();return r.json()});if(active){setDepartures(j as {calls:Call[];fetched:string});setDepError(false);}}catch{if(active)setDepError(true);}finally{if(active)setDepLoading(false);}}
  load();const id=setInterval(()=>{if(!document.hidden)load();},30000);return()=>{active=false;controller.abort();clearInterval(id);};},[stop]);
  const onVisible=useCallback((ids:string[])=>setVisible(previous=>previous?.join()===ids.join()?previous:ids),[]);
  function go(name:string){setPlace(name);mapRef.current?.go(name);setSelected(null);if(name==="Hele området")setThree(false);const index=places.findIndex(p=>p.name===name);if(index>=0)setStop(stops[[0,2,3,4,5,6][index]].id);}
