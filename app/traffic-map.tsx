@@ -9,6 +9,19 @@ function samePoint(a:Point,b:Point){return Math.abs(a[0]-b[0])<0.000001&&Math.ab
 function vehicleSize(v:Vehicle){const meters=v.kind==="bus"?12:v.sizeMeters||42;return Math.max(1,Math.min(2.25,meters/48));}
 function smoothStep(t:number){return t*t*(3-2*t);}
 function bearingBetween(a:Point,b:Point){const lat=((a[1]+b[1])/2)*Math.PI/180, dx=(b[0]-a[0])*Math.cos(lat), dy=b[1]-a[1];return (Math.atan2(dx,dy)*180/Math.PI+360)%360;}
+function projectedPoint(v:Vehicle,now:number):{point:Point;live:boolean}{
+ const base:Point=[v.lon,v.lat];
+ if(v.source!=="AIS"||v.docked||v.speed===null||v.bearing===null||v.speed<=0.2||v.speed>45)return {point:base,live:false};
+ const report=v.updated&&Number.isFinite(Date.parse(v.updated))?Date.parse(v.updated):Date.parse(v.fetched);
+ if(!Number.isFinite(report))return {point:base,live:false};
+ const seconds=Math.min(240,Math.max(0,(now-report)/1000));
+ if(seconds<2)return {point:base,live:false};
+ const distance=v.speed*1852*seconds/3600, radius=6371000, brng=v.bearing*Math.PI/180;
+ const lat1=v.lat*Math.PI/180, lon1=v.lon*Math.PI/180, d=distance/radius;
+ const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(brng));
+ const lon2=lon1+Math.atan2(Math.sin(brng)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+ return {point:[lon2*180/Math.PI,lat2*180/Math.PI],live:true};
+}
 export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,boolean>;now:number;selected:string|null;onSelect:(v:Vehicle)=>void;onStop:(id:string)=>void;onVisible:(ids:string[])=>void}>(function TrafficMap({vehicles,enabled,now,selected,onSelect,onStop,onVisible},ref){
  const container=useRef<HTMLDivElement>(null), map=useRef<GLMap|null>(null), markers=useRef(new Map<string,Marker>()), positions=useRef(new Map<string,Point>()), rafs=useRef(new Map<string,number>()), callbacks=useRef({onSelect,onStop,onVisible}), current=useRef(vehicles);
  callbacks.current={onSelect,onStop,onVisible};current.current=vehicles;
@@ -31,10 +44,10 @@ export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,bool
  const visible=vehicles.filter(v=>enabled[v.kind]);const ids=new Set(visible.map(v=>v.id));
  for(const [id,m] of markers.current){if(!ids.has(id)){const raf=rafs.current.get(id);if(raf)cancelAnimationFrame(raf);rafs.current.delete(id);positions.current.delete(id);m.remove();markers.current.delete(id);}}
  for(const v of visible){let marker=markers.current.get(v.id);if(!marker){const el=document.createElement("button");el.onclick=()=>{const latest=current.current.find(x=>x.id===v.id);if(latest)callbacks.current.onSelect(latest);};marker=new gl.Marker({element:el,anchor:"center"}).setLngLat([v.lon,v.lat]).addTo(map.current);markers.current.set(v.id,marker);}
- const next:Point=[v.lon,v.lat], previous=positions.current.get(v.id), willMove=!!previous&&!samePoint(previous,next);
+ const projected=projectedPoint(v,now), next=projected.point, previous=positions.current.get(v.id), willMove=!!previous&&!samePoint(previous,next);
  const displayBearing=v.bearing??(previous?bearingBetween(previous,next):0);
  const isOld=oldPosition(v,now);
- const el=marker.getElement();el.className="maplibregl-marker maplibregl-marker-anchor-center vehicle-pin "+v.kind+(selected===v.id?" selected":"")+(isOld?" old":"")+(v.kind==="bus"&&!isOld?" live":"")+(v.docked?" docked":"")+(willMove||rafs.current.has(v.id)?" moving":"");
+ const el=marker.getElement();el.className="maplibregl-marker maplibregl-marker-anchor-center vehicle-pin "+v.kind+(selected===v.id?" selected":"")+(isOld?" old":"")+(v.kind==="bus"&&!isOld?" live":"")+(v.docked?" docked":"")+(willMove||projected.live||rafs.current.has(v.id)?" moving":"");
  el.style.setProperty("--vehicle-color",kinds.find(k=>k.id===v.kind)!.color);
  const scale=vehicleSize(v), width=v.kind==="bus"?58:Math.round(22+scale*22), height=v.kind==="bus"?34:Math.round(24+scale*20);
  el.style.setProperty("--vehicle-width",width+"px");el.style.setProperty("--vehicle-height",height+"px");
@@ -43,7 +56,7 @@ export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,bool
  if(v.kind==="bus"){glyph.innerHTML='<svg viewBox="0 0 76 44" aria-hidden="true"><path class="bus-shadow" d="M9 35h55l7 4-9 3H8l-5-3Z"/><path class="bus-side" d="M8 14c0-4 3-7 7-7h42c6 0 10 4 12 10l3 12H8V14Z"/><path class="bus-roof" d="M15 5h39c6 0 11 4 14 11H11l4-11Z"/><path class="bus-window" d="M16 12h38c5 0 8 2 11 7H16V12Z"/><path class="bus-door" d="M49 20h10v11H49Z"/><path class="bus-front" d="M64 21h7l1 7h-8v-7Z"/><circle class="wheel" cx="20" cy="32" r="5"/><circle class="wheel" cx="58" cy="32" r="5"/><circle class="wheel-cap" cx="20" cy="32" r="2"/><circle class="wheel-cap" cx="58" cy="32" r="2"/></svg>';const label=document.createElement("span");label.className="route-label";label.textContent=v.line||"B";el.appendChild(glyph);el.appendChild(label);}
  else{glyph.innerHTML=v.kind==="ferry"?'<svg viewBox="0 0 92 54" aria-hidden="true"><path class="vessel-shadow" d="M12 42h62l12 5-13 5H14L3 47Z"/><path class="ship-hull ferry-hull" d="M5 22h68l14 10-11 16H17L5 22Z"/><path class="ship-deck" d="M15 29h56"/><path class="ship-cabin ferry-cabin" d="M22 8h35l11 14H16l6-14Z"/><path class="ship-bridge" d="M31 13h20l5 7H27Z"/><path class="ship-window-row" d="M22 25h44"/><circle class="mooring-dot" cx="15" cy="35" r="2.5"/><circle class="mooring-dot" cx="75" cy="35" r="2.5"/></svg>':'<svg viewBox="0 0 92 54" aria-hidden="true"><path class="vessel-shadow" d="M12 42h62l12 5-13 5H14L3 47Z"/><path class="ship-hull" d="M6 28 46 6l40 22-13 20H19L6 28Z"/><path class="ship-deck" d="M18 31h56"/><path class="ship-cabin" d="M34 15h22l8 13H27l7-13Z"/><path class="ship-bridge" d="M39 18h13l5 8H34Z"/><path class="ship-window-row" d="M28 34h34"/><circle class="mooring-dot" cx="20" cy="39" r="2.5"/><circle class="mooring-dot" cx="71" cy="39" r="2.5"/></svg>';el.appendChild(glyph);if(v.docked){const dock=document.createElement("span");dock.className="dock-marker";dock.setAttribute("aria-hidden","true");el.appendChild(dock);}}
  if(!previous){positions.current.set(v.id,next);marker.setLngLat(next);}
- else if(!samePoint(previous,next)){const oldRaf=rafs.current.get(v.id);if(oldRaf)cancelAnimationFrame(oldRaf);const start=performance.now(), from=previous, duration=v.kind==="bus"?18000:70000;
+ else if(!samePoint(previous,next)){const oldRaf=rafs.current.get(v.id);if(oldRaf)cancelAnimationFrame(oldRaf);const start=performance.now(), from=previous, duration=v.kind==="bus"?18000:projected.live?14000:70000;
   const step=(time:number)=>{const t=Math.min(1,(time-start)/duration), e=smoothStep(t), p:Point=[from[0]+(next[0]-from[0])*e,from[1]+(next[1]-from[1])*e];positions.current.set(v.id,p);marker!.setLngLat(p);if(t<1)rafs.current.set(v.id,requestAnimationFrame(step));else{positions.current.set(v.id,next);rafs.current.delete(v.id);}};
   rafs.current.set(v.id,requestAnimationFrame(step));
  }else marker.setLngLat(next);
