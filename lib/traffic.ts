@@ -1,5 +1,5 @@
 export type Kind = "bus" | "ferry" | "boat" | "ship";
-export type Vehicle = {id:string;kind:Kind;name:string;line?:string;route?:string;destination?:string;lat:number;lon:number;bearing:number|null;speed:number|null;updated:string|null;fetched:string;source:"Entur"|"AIS";delay:number|null};
+export type Vehicle = {id:string;kind:Kind;name:string;line?:string;route?:string;destination?:string;lat:number;lon:number;bearing:number|null;speed:number|null;updated:string|null;fetched:string;source:"Entur"|"AIS";delay:number|null;sizeMeters?:number};
 export type Feed = {vehicles:Vehicle[];fetched:string;partial:boolean;status:"ok"|"error";message?:string};
 export const kinds: {id:Kind;name:string;description:string;color:string}[]=[
 {id:"bus",name:"Busser",description:"Skyss i Nordhordland",color:"#f9b855"},
@@ -28,4 +28,16 @@ export function inRegion(lat:number,lon:number){return Number.isFinite(lat)&&Num
 export function oldPosition(v:Vehicle,now:number){return v.updated ? now-Date.parse(v.updated)>600000 : false;}
 export function time(value:string|null){return value&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleTimeString("nb-NO",{hour:"2-digit",minute:"2-digit",timeZone:"Europe/Oslo"}):"Ukjent";}
 export function age(value:string|null,now:number){if(!value)return "Posisjonstid ukjent";const minutes=Math.max(0,Math.floor((now-Date.parse(value))/60000));return minutes<1?"Oppdatert nå":minutes<60?minutes+" min siden":Math.floor(minutes/60)+" t "+minutes%60+" min siden";}
+export function approximateVesselLength(kind:Kind,shipType:number,name:string){
+ const n=name.toUpperCase();
+ if(kind==="ferry")return 70;
+ if(n.includes("FLOATEL")||n.includes("PHOENIX"))return 140;
+ if(n.includes("SEVEN SEAS"))return 220;
+ if(shipType>=80&&shipType<90)return 180;
+ if(shipType>=70&&shipType<80)return 95;
+ if(shipType>=50&&shipType<60)return 80;
+ if(shipType>=30&&shipType<40)return 38;
+ if(kind==="boat")return 24;
+ return 55;
+}
 

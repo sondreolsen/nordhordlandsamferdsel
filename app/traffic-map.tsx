@@ -4,8 +4,12 @@ import type {Map as GLMap,Marker} from "maplibre-gl";
 import {places,stops,kinds,oldPosition,type Kind,type Vehicle} from "../lib/traffic";
 import "maplibre-gl/dist/maplibre-gl.css";
 export type MapHandle={go:(name:string)=>void;zoom:(amount:number)=>void;north:()=>void;pitch:(three:boolean)=>void;focus:(v:Vehicle)=>void};
+type Point=[number,number];
+function samePoint(a:Point,b:Point){return Math.abs(a[0]-b[0])<0.000001&&Math.abs(a[1]-b[1])<0.000001;}
+function vehicleSize(v:Vehicle){const meters=v.kind==="bus"?12:v.sizeMeters||42;return Math.max(1,Math.min(2.25,meters/48));}
+function smoothStep(t:number){return t*t*(3-2*t);}
 export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,boolean>;now:number;selected:string|null;onSelect:(v:Vehicle)=>void;onStop:(id:string)=>void;onVisible:(ids:string[])=>void}>(function TrafficMap({vehicles,enabled,now,selected,onSelect,onStop,onVisible},ref){
- const container=useRef<HTMLDivElement>(null), map=useRef<GLMap|null>(null), markers=useRef(new Map<string,Marker>()), callbacks=useRef({onSelect,onStop,onVisible}), current=useRef(vehicles);
+ const container=useRef<HTMLDivElement>(null), map=useRef<GLMap|null>(null), markers=useRef(new Map<string,Marker>()), positions=useRef(new Map<string,Point>()), rafs=useRef(new Map<string,number>()), callbacks=useRef({onSelect,onStop,onVisible}), current=useRef(vehicles);
  callbacks.current={onSelect,onStop,onVisible};current.current=vehicles;
  const [ready,setReady]=useState(false),[failed,setFailed]=useState(false);
  function fit(){map.current?.setTerrain(null);map.current?.fitBounds([[4.77,60.494],[5.37,60.854]],{padding:{top:90,bottom:85,left:55,right:55},duration:1000,pitch:0,bearing:0});}
@@ -21,16 +25,25 @@ export default forwardRef<MapHandle,{vehicles:Vehicle[];enabled:Record<Kind,bool
  m.on("error",e=>{if(!m.isStyleLoaded()&&e.error?.message?.includes("style"))setFailed(true);});
  resize=new ResizeObserver(()=>m.resize());resize.observe(container.current);
  }).catch(()=>setFailed(true));
- return()=>{cancelled=true;resize?.disconnect();map.current?.remove();map.current=null;markers.current.clear();};},[]);
+ return()=>{cancelled=true;resize?.disconnect();for(const id of rafs.current.values())cancelAnimationFrame(id);rafs.current.clear();positions.current.clear();map.current?.remove();map.current=null;markers.current.clear();};},[]);
  useEffect(()=>{if(!ready||!map.current)return;let cancelled=false;import("maplibre-gl").then(gl=>{if(cancelled||!map.current)return;
  const visible=vehicles.filter(v=>enabled[v.kind]);const ids=new Set(visible.map(v=>v.id));
- for(const [id,m] of markers.current){if(!ids.has(id)){m.remove();markers.current.delete(id);}}
+ for(const [id,m] of markers.current){if(!ids.has(id)){const raf=rafs.current.get(id);if(raf)cancelAnimationFrame(raf);rafs.current.delete(id);positions.current.delete(id);m.remove();markers.current.delete(id);}}
  for(const v of visible){let marker=markers.current.get(v.id);if(!marker){const el=document.createElement("button");el.onclick=()=>{const latest=current.current.find(x=>x.id===v.id);if(latest)callbacks.current.onSelect(latest);};marker=new gl.Marker({element:el,anchor:"center"}).setLngLat([v.lon,v.lat]).addTo(map.current);markers.current.set(v.id,marker);}
  const el=marker.getElement();el.className="maplibregl-marker maplibregl-marker-anchor-center vehicle-pin "+v.kind+(selected===v.id?" selected":"")+(oldPosition(v,now)?" old":"");
  el.style.setProperty("--vehicle-color",kinds.find(k=>k.id===v.kind)!.color);
+ const scale=vehicleSize(v), width=v.kind==="bus"?46:Math.round(22+scale*22), height=v.kind==="bus"?31:Math.round(24+scale*20);
+ el.style.setProperty("--vehicle-width",width+"px");el.style.setProperty("--vehicle-height",height+"px");
  el.title=v.name+(v.destination?" → "+v.destination:"");el.setAttribute("aria-label",el.title);el.setAttribute("aria-pressed",String(selected===v.id));
- el.replaceChildren();if(v.kind==="bus"){el.textContent=v.line||"B";}else{const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("viewBox","0 0 24 28");svg.setAttribute("aria-hidden","true");const path=document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttribute("d",v.kind==="ferry"?"M12 2 20 10 20 24 4 24 4 10Z":"M12 2 19 24 12 20 5 24Z");svg.appendChild(path);svg.style.transform="rotate("+(v.bearing??0)+"deg)";el.appendChild(svg);}
- marker.setLngLat([v.lon,v.lat]);
+ el.replaceChildren();const glyph=document.createElement("span");glyph.className="vehicle-glyph";glyph.style.transform="rotate("+(v.bearing??0)+"deg)";
+ if(v.kind==="bus"){glyph.innerHTML='<svg viewBox="0 0 58 34" aria-hidden="true"><path class="bus-body" d="M6 7c0-3 2-5 5-5h30c6 0 10 4 12 10l2 8v7H6V7Z"/><path class="bus-window" d="M13 7h25c5 0 8 3 10 7H13V7Z"/><path class="bus-front" d="M48 15h5l1 5h-6v-5Z"/><circle class="wheel" cx="17" cy="28" r="4"/><circle class="wheel" cx="45" cy="28" r="4"/></svg>';const label=document.createElement("span");label.className="route-label";label.textContent=v.line||"B";el.appendChild(glyph);el.appendChild(label);}
+ else{glyph.innerHTML=v.kind==="ferry"?'<svg viewBox="0 0 72 42" aria-hidden="true"><path class="ship-hull" d="M5 16h50l12 8-8 13H15L5 16Z"/><path class="ship-cabin" d="M20 7h25l6 9H16l4-9Z"/><path class="ship-deck" d="M15 21h40"/></svg>':'<svg viewBox="0 0 72 42" aria-hidden="true"><path class="ship-hull" d="M7 20 36 5l29 15-10 16H17L7 20Z"/><path class="ship-cabin" d="M29 13h14l5 8H24l5-8Z"/><path class="ship-deck" d="M18 23h36"/></svg>';el.appendChild(glyph);}
+ const next:Point=[v.lon,v.lat], previous=positions.current.get(v.id);
+ if(!previous){positions.current.set(v.id,next);marker.setLngLat(next);}
+ else if(!samePoint(previous,next)){const oldRaf=rafs.current.get(v.id);if(oldRaf)cancelAnimationFrame(oldRaf);const start=performance.now(), from=previous, duration=v.kind==="bus"?28000:70000;
+  const step=(time:number)=>{const t=Math.min(1,(time-start)/duration), e=smoothStep(t), p:Point=[from[0]+(next[0]-from[0])*e,from[1]+(next[1]-from[1])*e];positions.current.set(v.id,p);marker!.setLngLat(p);if(t<1)rafs.current.set(v.id,requestAnimationFrame(step));else{positions.current.set(v.id,next);rafs.current.delete(v.id);}};
+  rafs.current.set(v.id,requestAnimationFrame(step));
+ }else marker.setLngLat(next);
  }
  const b=map.current.getBounds();callbacks.current.onVisible(vehicles.filter(v=>b.contains([v.lon,v.lat])).map(v=>v.id));
  });return()=>{cancelled=true;};},[vehicles,enabled,ready,selected,now]);
