@@ -1,4 +1,4 @@
-import {approximateVesselLength,inRegion,type Feed,type Vehicle} from "./traffic";
+import {approximateVesselBeam,approximateVesselLength,inRegion,vesselTypeName,type Feed,type Vehicle} from "./traffic";
 
 const ferryNames=new Set(["STORFJORD","FEDJEBJORN","FEDJEBJØRN"]);
 
@@ -38,7 +38,8 @@ export async function loadStaticTraffic(source:string):Promise<Feed>{
   for(const v of j.data.fartoy){if(!inRegion(v.lat,v.lon)||!v.vessel_id)continue;
    const n=(v.navn||"").toUpperCase(), t=Number(v.skipstype);
    const kind=ferryNames.has(n)?"ferry":(t>=40&&t<50)||(t>=60&&t<70)||t===36||t===37?"boat":"ship";
-   const item:Vehicle={id:"ais-"+v.vessel_id,kind,name:v.navn||"Fartøy "+v.vessel_id,lat:v.lat,lon:v.lon,bearing:v.kurs??null,speed:v.fart_knop??null,updated:v.sist_oppdatert||null,fetched:j._meta?.retrieved_at||fetched,destination:v.destinasjon||undefined,source:"AIS",delay:null,sizeMeters:approximateVesselLength(kind,t,v.navn||"")};
+   const length=approximateVesselLength(kind,t,v.navn||"");
+   const item:Vehicle={id:"ais-"+v.vessel_id,kind,name:v.navn||"Fartøy "+v.vessel_id,lat:v.lat,lon:v.lon,bearing:v.kurs??null,speed:v.fart_knop??null,updated:v.sist_oppdatert||null,fetched:j._meta?.retrieved_at||fetched,destination:v.destinasjon||undefined,source:"AIS",delay:null,sizeMeters:length,beamMeters:approximateVesselBeam(length,kind),mmsi:String(v.vessel_id),vesselType:vesselTypeName(t,kind),docked:Number(v.fart_knop??0)<=0.2};
    vehicles.set(item.id,item);
   }}
  return {vehicles:[...vehicles.values()],fetched,partial,status:"ok"};

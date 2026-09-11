@@ -1,5 +1,5 @@
 export type Kind = "bus" | "ferry" | "boat" | "ship";
-export type Vehicle = {id:string;kind:Kind;name:string;line?:string;route?:string;destination?:string;lat:number;lon:number;bearing:number|null;speed:number|null;updated:string|null;fetched:string;source:"Entur"|"AIS";delay:number|null;sizeMeters?:number};
+export type Vehicle = {id:string;kind:Kind;name:string;line?:string;route?:string;destination?:string;lat:number;lon:number;bearing:number|null;speed:number|null;updated:string|null;fetched:string;source:"Entur"|"AIS";delay:number|null;sizeMeters?:number;beamMeters?:number;mmsi?:string;vesselType?:string;docked?:boolean};
 export type Feed = {vehicles:Vehicle[];fetched:string;partial:boolean;status:"ok"|"error";message?:string};
 export const kinds: {id:Kind;name:string;description:string;color:string}[]=[
 {id:"bus",name:"Busser",description:"Skyss i Nordhordland",color:"#f9b855"},
@@ -39,5 +39,22 @@ export function approximateVesselLength(kind:Kind,shipType:number,name:string){
  if(shipType>=30&&shipType<40)return 38;
  if(kind==="boat")return 24;
  return 55;
+}
+export function approximateVesselBeam(length:number,kind:Kind){
+ if(kind==="ferry")return Math.round(length*0.24);
+ if(length>150)return Math.round(length*0.14);
+ if(length>80)return Math.round(length*0.18);
+ return Math.max(6,Math.round(length*0.28));
+}
+export function vesselTypeName(shipType:number,kind:Kind){
+ if(kind==="ferry")return "Bilferge";
+ if(shipType>=80&&shipType<90)return "Tankskip";
+ if(shipType>=70&&shipType<80)return "Lasteskip";
+ if(shipType>=60&&shipType<70)return "Passasjerskip";
+ if(shipType>=50&&shipType<60)return "Los / slepefartøy";
+ if(shipType>=40&&shipType<50)return "Hurtigbåt / passasjer";
+ if(shipType>=30&&shipType<40)return "Fiskefartøy";
+ if(kind==="boat")return "Mindre fartøy";
+ return "Skip";
 }
 
